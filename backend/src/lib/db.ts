@@ -30,12 +30,32 @@ const FALLBACK_DEFAULT_PASSWORD_HASH =
   '$2b$12$wjjDrxAK3N9nY86.kF8/PuLWmM393hgEPznV.Vp7tejFlE.JoocG.'; // bcrypt for 'admin123!'
 
 /**
+ * Safely normalizes an environment-provided bcrypt hash by trimming whitespace
+ * and removing ONLY matching surrounding single or double quotes.
+ * Never modifies actual bcrypt hash contents.
+ */
+export function normalizeBcryptHash(hash: string | undefined | null): string | null {
+  if (!hash || typeof hash !== 'string') return null;
+  let trimmed = hash.trim();
+  // Remove matching surrounding double quotes: "..."
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  // Remove matching surrounding single quotes: '...'
+  else if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  return trimmed || null;
+}
+
+/**
  * Validates whether a given string is a valid modular crypt format bcrypt hash.
  * Accepts standard formats: $2a$, $2b$, or $2y$ with a 2-digit cost parameter and 53 base64 characters.
  */
 export function isValidBcryptHash(hash: string | undefined | null): boolean {
-  if (!hash || typeof hash !== 'string') return false;
-  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(hash.trim());
+  const normalized = normalizeBcryptHash(hash);
+  if (!normalized) return false;
+  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(normalized);
 }
 
 /**
@@ -55,38 +75,78 @@ export class SingleCompanyStore {
    * is explicitly set and differs from the persisted admin_credentials_version.
    */
   async getCompany(): Promise<CompanyConfig> {
+    const targetVersion = (process.env.ADMIN_CREDENTIALS_VERSION || '').trim();
+
+    // Warm serverless instance check:
+    // If targetVersion is defined and differs from the cached configuration version,
+    // invalidate in-memory cache so we reload from storage and synchronize.
     if (this.cachedConfig) {
-      return { ...this.cachedConfig };
+      const cachedVersion = (this.cachedConfig.admin_credentials_version || '').trim();
+      if (targetVersion && targetVersion !== cachedVersion) {
+        this.cachedConfig = null;
+      } else {
+        return { ...this.cachedConfig };
+      }
     }
 
     const storage = getStorage();
     const stored = await storage.readConfig();
-    const targetVersion = (process.env.ADMIN_CREDENTIALS_VERSION || '').trim();
 
     if (stored) {
       if (stored.admin_credentials_version === undefined) {
         stored.admin_credentials_version = null;
       }
 
-      // Check if explicit versioned credential bootstrap/reset is requested
-      const currentVersion = (stored.admin_credentials_version || '').trim();
-      if (targetVersion && targetVersion !== currentVersion) {
-        // 1. Update username from ADMIN_USERNAME if provided and non-empty
-        const targetUsername = (process.env.ADMIN_USERNAME || '').trim();
-        if (targetUsername && targetUsername !== stored.username) {
-          stored.username = targetUsername;
+      const storedVersion = (stored.admin_credentials_version || '').trim();
+      const versionMismatch = Boolean(targetVersion && targetVersion !== storedVersion);
+
+      const rawUsername = process.env.ADMIN_USERNAME;
+      const usernamePresent = Boolean(rawUsername && rawUsername.trim());
+      const targetUsername = (rawUsername || '').trim();
+
+      const rawPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+      const passwordHashPresent = Boolean(rawPasswordHash && rawPasswordHash.trim());
+      const normalizedPasswordHash = normalizeBcryptHash(rawPasswordHash);
+      const passwordHashValid = Boolean(normalizedPasswordHash && isValidBcryptHash(normalizedPasswordHash));
+
+      let credentialsApplied = false;
+      let persistenceSucceeded = false;
+
+      if (versionMismatch) {
+        // Strict safe rule:
+        // Version is advanced ONLY after the requested credential reset
+        // has been completely and successfully applied and persisted.
+        // If password hash is invalid or missing, do NOT advance version and do NOT overwrite password.
+        if (passwordHashPresent && passwordHashValid) {
+          if (usernamePresent && targetUsername !== stored.username) {
+            stored.username = targetUsername;
+          }
+          stored.password_hash = normalizedPasswordHash!;
+          stored.admin_credentials_version = targetVersion;
+          stored.updated_at = new Date();
+          credentialsApplied = true;
+
+          try {
+            await storage.writeConfig(stored);
+            persistenceSucceeded = true;
+          } catch (err: any) {
+            console.error('Failed to persist updated credentials to storage:', err?.message);
+            credentialsApplied = false;
+          }
         }
 
-        // 2. Update password_hash from ADMIN_PASSWORD_HASH ONLY if it is a valid bcrypt hash
-        const targetPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
-        if (targetPasswordHash && isValidBcryptHash(targetPasswordHash)) {
-          stored.password_hash = targetPasswordHash;
-        }
-
-        // 3. Persist the new credential version so it only updates once
-        stored.admin_credentials_version = targetVersion;
-        stored.updated_at = new Date();
-        await storage.writeConfig(stored);
+        // Safe diagnostics: NEVER log actual password or hash
+        console.log('credentialBootstrap:', JSON.stringify({
+          targetVersionPresent: Boolean(targetVersion),
+          targetVersion,
+          storedVersion,
+          usernamePresent,
+          passwordHashPresent,
+          passwordHashValid,
+          versionMismatch,
+          credentialsApplied,
+          persistenceSucceeded,
+        }));
       }
 
       this.cachedConfig = stored;
@@ -95,9 +155,10 @@ export class SingleCompanyStore {
 
     // Seed initial configuration from environment variables
     const now = new Date();
-    const envPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
-    const initialPasswordHash = isValidBcryptHash(envPasswordHash)
-      ? envPasswordHash
+    const rawEnvPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    const normalizedEnvHash = normalizeBcryptHash(rawEnvPasswordHash);
+    const initialPasswordHash = (normalizedEnvHash && isValidBcryptHash(normalizedEnvHash))
+      ? normalizedEnvHash
       : FALLBACK_DEFAULT_PASSWORD_HASH;
 
     const initialConfig: CompanyConfig = {
