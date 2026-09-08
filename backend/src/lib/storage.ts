@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import zlib from 'zlib';
-import { put, del, head, getDownloadUrl } from '@vercel/blob';
+import { put, del, get } from '@vercel/blob';
 import { CompanyConfig, CatalogCache } from './types';
 
 export interface StorageAdapter {
@@ -117,8 +117,8 @@ export class LocalFileStorage implements StorageAdapter {
 
 /**
  * Vercel Blob Storage Adapter (Production Serverless)
- * All blobs are stored with access: 'private' so they cannot be accessed directly via public URLs.
- * Blobs are downloaded server-side using authenticated tokens.
+ * All blobs are stored with access: 'private' in a private Vercel Blob store.
+ * Blobs are read server-side using the authenticated get() SDK method with access: 'private'.
  */
 export class VercelBlobStorage implements StorageAdapter {
   private configBlobName = 'company-config.json';
@@ -132,24 +132,18 @@ export class VercelBlobStorage implements StorageAdapter {
       const token = process.env.BLOB_READ_WRITE_TOKEN;
       if (!token) return null;
 
-      // Check if blob exists
-      const blobDetails = await head(this.configBlobName, { token });
-      if (!blobDetails) return null;
-
-      // Access private blob using download URL
-      const downloadUrl = getDownloadUrl(blobDetails.url);
-      const res = await fetch(downloadUrl, {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
+      const result = await get(this.configBlobName, {
+        access: 'private',
+        token,
+        useCache: false,
       });
 
-      if (!res.ok) {
-        if (res.status === 404) return null;
-        throw new Error(`Failed to fetch config blob: HTTP ${res.status}`);
+      if (!result || !result.stream) {
+        return null;
       }
 
-      const json = await res.json();
+      const text = await new Response(result.stream).text();
+      const json = JSON.parse(text);
       return reviveDates(json);
     } catch (err: any) {
       if (err.name === 'BlobNotFoundError' || err.status === 404) return null;
@@ -162,8 +156,9 @@ export class VercelBlobStorage implements StorageAdapter {
     const token = process.env.BLOB_READ_WRITE_TOKEN;
     const json = JSON.stringify(config, null, 2);
     await put(this.configBlobName, json, {
-      access: 'public',
+      access: 'private',
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: 'application/json',
       token,
     });
@@ -175,22 +170,17 @@ export class VercelBlobStorage implements StorageAdapter {
       if (!token) return null;
 
       const blobName = this.getCatalogBlobName(version);
-      const blobDetails = await head(blobName, { token });
-      if (!blobDetails) return null;
-
-      const downloadUrl = getDownloadUrl(blobDetails.url);
-      const res = await fetch(downloadUrl, {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
+      const result = await get(blobName, {
+        access: 'private',
+        token,
+        useCache: false,
       });
 
-      if (!res.ok) {
-        if (res.status === 404) return null;
-        throw new Error(`Failed to fetch catalog blob: HTTP ${res.status}`);
+      if (!result || !result.stream) {
+        return null;
       }
 
-      const arrayBuffer = await res.arrayBuffer();
+      const arrayBuffer = await new Response(result.stream).arrayBuffer();
       const decompressed = zlib.gunzipSync(Buffer.from(arrayBuffer));
       return JSON.parse(decompressed.toString('utf8'));
     } catch (err: any) {
@@ -207,8 +197,9 @@ export class VercelBlobStorage implements StorageAdapter {
     const blobName = this.getCatalogBlobName(version);
 
     await put(blobName, compressed, {
-      access: 'public',
+      access: 'private',
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: 'application/gzip',
       token,
     });
@@ -218,17 +209,13 @@ export class VercelBlobStorage implements StorageAdapter {
     try {
       const token = process.env.BLOB_READ_WRITE_TOKEN;
       const blobName = this.getCatalogBlobName(version);
-      const blobDetails = await head(blobName, { token });
-      if (blobDetails) {
-        await del(blobDetails.url, { token });
-      }
+      await del(blobName, { token });
     } catch {
       // Best-effort cleanup
     }
   }
 
   async clearAll(): Promise<void> {
-    // For test resets if connected to test blob store
     try {
       const token = process.env.BLOB_READ_WRITE_TOKEN;
       await del(this.configBlobName, { token });
