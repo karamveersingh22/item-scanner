@@ -7,12 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx scripts/test-stage2.ts && tsx scripts/test-stage4.ts && tsx scripts/test-stage5.ts && tsx scripts/test-stage6.ts && tsx scripts/test-private-blob.ts",
+    "test": "tsx scripts/test-stage2.ts && tsx scripts/test-stage4.ts && tsx scripts/test-stage5.ts && tsx scripts/test-stage6.ts && tsx scripts/test-private-blob.ts && tsx scripts/test-credential-version.ts",
     "test:stage2": "tsx scripts/test-stage2.ts",
     "test:stage4": "tsx scripts/test-stage4.ts",
     "test:stage5": "tsx scripts/test-stage5.ts",
     "test:stage6": "tsx scripts/test-stage6.ts",
-    "test:blob": "tsx scripts/test-private-blob.ts"
+    "test:blob": "tsx scripts/test-private-blob.ts",
+    "test:credentials": "tsx scripts/test-credential-version.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

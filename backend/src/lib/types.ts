@@ -24,6 +24,7 @@ export interface Company {
   company_name: string;
   username: string;
   password_hash: string;
+  admin_credentials_version?: string | null;
   status: CompanyStatus;
   google_drive_folder_id: string | null;
   google_drive_file_id: string | null;
@@ -43,7 +44,7 @@ export interface Company {
 
 export type CompanyConfig = Company;
 
-export type SafeCompany = Omit<Company, 'password_hash' | 'google_refresh_token'>;
+export type SafeCompany = Omit<Company, 'password_hash' | 'google_refresh_token' | 'admin_credentials_version'>;
 
 export interface CompanyJWTPayload {
   company_id: string;
@@ -55,6 +56,6 @@ export interface CompanyJWTPayload {
 
 export function toSafeCompany(company: Company): SafeCompany {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password_hash, google_refresh_token, ...safe } = company;
+  const { password_hash, google_refresh_token, admin_credentials_version, ...safe } = company;
   return safe;
 }

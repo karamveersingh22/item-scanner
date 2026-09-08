@@ -26,9 +26,17 @@ export interface UpdateSyncStateData {
 }
 
 const DEFAULT_COMPANY_ID = 'company-primary';
-const DEFAULT_PASSWORD_HASH =
-  process.env.ADMIN_PASSWORD_HASH ||
+const FALLBACK_DEFAULT_PASSWORD_HASH =
   '$2b$12$wjjDrxAK3N9nY86.kF8/PuLWmM393hgEPznV.Vp7tejFlE.JoocG.'; // bcrypt for 'admin123!'
+
+/**
+ * Validates whether a given string is a valid modular crypt format bcrypt hash.
+ * Accepts standard formats: $2a$, $2b$, or $2y$ with a 2-digit cost parameter and 53 base64 characters.
+ */
+export function isValidBcryptHash(hash: string | undefined | null): boolean {
+  if (!hash || typeof hash !== 'string') return false;
+  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(hash.trim());
+}
 
 /**
  * Single Company Store (Permanent One-Company Serverless Architecture)
@@ -43,6 +51,8 @@ export class SingleCompanyStore {
   /**
    * Initializes or loads the single company configuration.
    * If storage does not yet have config, seeds from environment variables.
+   * If storage has config, normally uses persisted credentials unless ADMIN_CREDENTIALS_VERSION
+   * is explicitly set and differs from the persisted admin_credentials_version.
    */
   async getCompany(): Promise<CompanyConfig> {
     if (this.cachedConfig) {
@@ -51,18 +61,51 @@ export class SingleCompanyStore {
 
     const storage = getStorage();
     const stored = await storage.readConfig();
+    const targetVersion = (process.env.ADMIN_CREDENTIALS_VERSION || '').trim();
+
     if (stored) {
+      if (stored.admin_credentials_version === undefined) {
+        stored.admin_credentials_version = null;
+      }
+
+      // Check if explicit versioned credential bootstrap/reset is requested
+      const currentVersion = (stored.admin_credentials_version || '').trim();
+      if (targetVersion && targetVersion !== currentVersion) {
+        // 1. Update username from ADMIN_USERNAME if provided and non-empty
+        const targetUsername = (process.env.ADMIN_USERNAME || '').trim();
+        if (targetUsername && targetUsername !== stored.username) {
+          stored.username = targetUsername;
+        }
+
+        // 2. Update password_hash from ADMIN_PASSWORD_HASH ONLY if it is a valid bcrypt hash
+        const targetPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
+        if (targetPasswordHash && isValidBcryptHash(targetPasswordHash)) {
+          stored.password_hash = targetPasswordHash;
+        }
+
+        // 3. Persist the new credential version so it only updates once
+        stored.admin_credentials_version = targetVersion;
+        stored.updated_at = new Date();
+        await storage.writeConfig(stored);
+      }
+
       this.cachedConfig = stored;
       return { ...this.cachedConfig };
     }
 
     // Seed initial configuration from environment variables
     const now = new Date();
+    const envPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
+    const initialPasswordHash = isValidBcryptHash(envPasswordHash)
+      ? envPasswordHash
+      : FALLBACK_DEFAULT_PASSWORD_HASH;
+
     const initialConfig: CompanyConfig = {
       id: DEFAULT_COMPANY_ID,
       company_name: (process.env.COMPANY_NAME || 'Item Master Company').trim(),
       username: (process.env.ADMIN_USERNAME || 'admin').trim(),
-      password_hash: DEFAULT_PASSWORD_HASH,
+      password_hash: initialPasswordHash,
+      admin_credentials_version: targetVersion || null,
       status: 'ACTIVE',
       google_drive_folder_id: null,
       google_drive_file_id: null,

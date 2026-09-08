@@ -16,6 +16,7 @@ export interface StorageAdapter {
 function reviveDates(config: any): CompanyConfig {
   return {
     ...config,
+    admin_credentials_version: config.admin_credentials_version || null,
     google_drive_modified_time: config.google_drive_modified_time
       ? new Date(config.google_drive_modified_time)
       : null,
