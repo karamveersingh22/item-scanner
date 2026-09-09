@@ -51,8 +51,19 @@ void main() {
   group('ApiService Configuration & Error Handling', () {
     test('defaultBaseUrl is defined and valid', () {
       final url = ApiService.defaultBaseUrl;
-      expect(url.startsWith('http'), true);
-      expect(url.contains('3000'), true);
+      expect(url, 'https://item-scanner-beryl.vercel.app');
+    });
+
+    test('custom SharedPreferences URL override and reset work correctly', () async {
+      SharedPreferences.setMockInitialValues({});
+      final api = ApiService();
+      expect(await api.getBaseUrl(), 'https://item-scanner-beryl.vercel.app');
+
+      await api.setBaseUrl('http://10.0.2.2:3000/');
+      expect(await api.getBaseUrl(), 'http://10.0.2.2:3000');
+
+      await api.resetBaseUrl();
+      expect(await api.getBaseUrl(), 'https://item-scanner-beryl.vercel.app');
     });
 
     test('ApiException properties capture error states', () {

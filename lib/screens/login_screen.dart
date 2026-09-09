@@ -427,7 +427,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             controller: _serverUrlController,
             style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'e.g. http://10.0.2.2:3000',
+              hintText: 'e.g. https://item-scanner-beryl.vercel.app',
               hintStyle: GoogleFonts.outfit(color: Colors.white30, fontSize: 12),
               filled: true,
               fillColor: const Color(0xFF0A0A18),
@@ -437,7 +437,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 8),
           Text(
-            'Android Emulator: http://10.0.2.2:3000\nDesktop / Localhost: http://127.0.0.1:3000',
+            'Default Production: https://item-scanner-beryl.vercel.app\nLocal Dev: http://10.0.2.2:3000 or http://127.0.0.1:3000',
             style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11),
           ),
         ],

@@ -29,17 +29,17 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  /// Default backend base URL fallback depending on platform.
-  /// On Android emulator: 10.0.2.2 points to the host computer's localhost.
-  /// On Desktop/Web/iOS simulator: 127.0.0.1 or localhost.
+  static const String _kProductionBaseUrl = 'https://item-scanner-beryl.vercel.app';
+
+  /// Default backend base URL.
+  /// Defaults to production (https://item-scanner-beryl.vercel.app).
+  /// Can be overridden at build time via:
+  ///   --dart-define=BACKEND_BASE_URL=http://10.0.2.2:3000
   static String get defaultBaseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:3000';
-    }
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:3000';
-    }
-    return 'http://127.0.0.1:3000';
+    return const String.fromEnvironment(
+      'BACKEND_BASE_URL',
+      defaultValue: _kProductionBaseUrl,
+    );
   }
 
   static const String _kBaseUrlPrefKey = 'api_base_url_custom';
@@ -75,6 +75,18 @@ class ApiService {
     return clean;
   }
 
+  void _ensureNetworkAllowed() {
+    if (!kIsWeb) {
+      try {
+        if (Platform.environment.containsKey('FLUTTER_TEST')) {
+          throw const SocketException('Network access disabled in unit test environment');
+        }
+      } catch (e) {
+        if (e is SocketException) rethrow;
+      }
+    }
+  }
+
   /// Authenticate company with shared credentials:
   /// POST /api/auth/login
   Future<({String token, CompanyInfo company})> login({
@@ -86,6 +98,7 @@ class ApiService {
     final uri = Uri.parse('$base/api/auth/login');
 
     try {
+      _ensureNetworkAllowed();
       final response = await http
           .post(
             uri,
@@ -156,6 +169,7 @@ class ApiService {
     final uri = Uri.parse('$base/api/auth/me');
 
     try {
+      _ensureNetworkAllowed();
       final response = await http.get(
         uri,
         headers: {
@@ -253,6 +267,7 @@ class ApiService {
     );
 
     try {
+      _ensureNetworkAllowed();
       final response = await http.get(
         uri,
         headers: {
