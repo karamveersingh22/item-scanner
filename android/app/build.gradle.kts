@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.item_scanner"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
