@@ -1,52 +1,61 @@
-# Item Master Scanner — Multi-Company Cloud & Offline Architecture
+# Item Master Scanner — One-Company Cloud & Offline Architecture
 
-High-performance, offline-first barcode & camera OCR inventory scanner application with a multi-company Next.js serverless backend and Google Drive spreadsheet synchronization.
+High-performance, offline-first barcode & camera OCR inventory scanner application with a single-company Next.js serverless backend on Vercel and Google Drive spreadsheet synchronization.
 
 ---
 
 ## Architecture Overview
 
 ```text
-[ Company Management Web Panel ]
-             │
-             ▼
-[ Next.js Serverless Backend (App Router) ] ─── OAuth 2.0 (AES-256-GCM) ───► [ Google Drive (itemmast.xlsx) ]
-             │
-             │ GET /api/sync/data?version=xxx (JWT Session Protected)
-             ▼
+[ Single-Company Management Web Panel ]
+                 │
+                 ▼
+[ Next.js Serverless Backend (Vercel) ] ─── OAuth 2.0 (AES-256-GCM) ───► [ Google Drive (ITEMMAST.xlsx) ]
+                 │
+                 │ Private Vercel Blob (access: 'private')
+                 ▼
+[ Paginated API (GET /api/sync/data) ]
+                 │
+                 ▼
 [ Flutter Mobile Application (Android / iOS) ]
-   ├── Staging Table (items_staging)
-   ├── Atomic Publication (Single SQLite Transaction)
-   └── Active Catalog (items) ◄── ML Kit Camera OCR & Barcode (< 2ms offline search)
+       ├── Staging Table (items_staging)
+       ├── Atomic Publication (Single SQLite Transaction)
+       └── Active Catalog (items) ◄── ML Kit Camera OCR & Barcode (microsecond local search)
 ```
 
 ### Key Highlights
-* **Zero Network Item Lookup**: Barcode scanning, camera OCR recognition, and `DatabaseService.findItem()` run **100% offline against local SQLite B-Trees** (< 2ms lookup speed).
+* **Production Backend URL**: `https://item-scanner-beryl.vercel.app` (Vercel Serverless, zero PostgreSQL/Neon/Prisma).
+* **Private Vercel Blob Storage**: Configuration and versioned compressed catalogs stored securely with `access: 'private'`.
+* **Zero Network Item Lookup**: Barcode scanning, camera OCR recognition, and `DatabaseService.findItem()` run **100% offline against local SQLite B-Trees** (microsecond lookup speed).
 * **Non-Blocking Background Sync**: Scanning and searching are never blocked or paused during synchronization.
-* **True SQLite Atomicity**: The incoming catalog is downloaded in pages into an `items_staging` table. The active `items` catalog is swapped only upon 100% successful validation within a single transaction.
+* **True SQLite Atomicity**: The incoming catalog is downloaded in pages into an `items_staging` table. The active `items` catalog is swapped only upon 100% successful validation within a single SQLite transaction.
 * **Strict Versioning Separation**:
-  * `google_drive_md5`: MD5 checksum of the raw Google Drive `.xlsx` file.
+  * `google_drive_md5`: MD5 checksum of the raw Google Drive `.xlsx` file. Used by Next.js to detect remote modifications.
   * `data_version`: Deterministic **MD5 hash** of the normalized catalog rows consumed by Flutter:
     `MD5(item_count + (i_code|rate|quantity|disc_per|disc_b;)*)`.
-* **Automatic Sync Scope**: **Automatic synchronization while the application is running** (15-minute foreground periodic timer). Does not execute when the app is terminated/suspended (no WorkManager / background fetch / native background services). On app restart, startup synchronization executes asynchronously. Manual `[SYNC DATABASE]` bypasses the interval check.
-* **Bounded Exponential Backoff**: Automatic retry for transient connection/5xx failures (2s, 5s, 15s, stop). Immediate abort on 401, 403, and validation errors.
+* **Automatic Sync Scope**: Automatic synchronization while the application is running (15-minute foreground periodic timer and app startup check). Does not execute when the app is terminated/suspended. Manual `[SYNC DATABASE]` bypasses the interval check.
+* **Bounded Exponential Backoff**: Automatic retry for transient connection/5xx failures (2s, 5s, 15s). Immediate abort on 401, 403, duplicate `I_CODE`, and validation errors.
 
 ---
 
 ## Production Environment Variables
 
-Configure these in `backend/.env.production` (see `backend/.env.example`):
+Configure these in the Vercel Dashboard or `backend/.env.production` (see `backend/.env.example`):
 
-| Variable | Description | Example |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | Serverless PostgreSQL connection URI | `postgresql://user:pass@ep-neon.tech/item_scanner?sslmode=require` |
-| `JWT_SECRET` | Cryptographic secret for signing session tokens (min 32 chars) | `openssl rand -hex 32` |
-| `NODE_ENV` | Environment mode (`development` / `production`) | `production` |
-| `APP_URL` | Public production URL of Next.js deployment | `https://items.yourcompany.com` |
-| `GOOGLE_CLIENT_ID` | Google Cloud Console OAuth 2.0 Client ID | `xxx.apps.googleusercontent.com` |
-| `GOOGLE_CLIENT_SECRET` | Google Cloud Console OAuth 2.0 Client Secret | `GOCSPX-xxx` |
-| `GOOGLE_REDIRECT_URI` | Authorized OAuth 2.0 redirect callback URL | `https://items.yourcompany.com/api/google-drive/callback` |
-| `ENCRYPTION_KEY` | 32-byte hex key for AES-256-GCM token encryption at rest | `openssl rand -hex 32` |
+| Variable | Description |
+| :--- | :--- |
+| `COMPANY_NAME` | Organization display name |
+| `ADMIN_USERNAME` | Admin login username |
+| `ADMIN_PASSWORD_HASH` | Salted bcrypt hash of admin password |
+| `ADMIN_CREDENTIALS_VERSION` | Version tag to force credential reset on deploy |
+| `JWT_SECRET` | Cryptographic secret for signing session tokens (min 32 chars) |
+| `NODE_ENV` | Environment mode (`development` / `production`) |
+| `APP_URL` | Public production URL of Next.js deployment (`https://item-scanner-beryl.vercel.app`) |
+| `GOOGLE_CLIENT_ID` | Google Cloud Console OAuth 2.0 Web Client ID |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console OAuth 2.0 Client Secret |
+| `GOOGLE_REDIRECT_URI` | Authorized OAuth 2.0 redirect callback URL |
+| `ENCRYPTION_KEY` | 32-byte (64 hex characters) key for AES-256-GCM token encryption at rest |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob read/write token for private storage |
 
 ---
 
@@ -54,7 +63,7 @@ Configure these in `backend/.env.production` (see `backend/.env.example`):
 
 ### Flutter Test Suite
 ```bash
-# Run all 29 Flutter tests (Auth, Sync, Atomic Staging, Rate Limiting, 10k/50k/100k benchmarks)
+# Run all 30 Flutter tests (Auth, Sync, Atomic Staging, Rate Limiting, 10k/50k/100k benchmarks)
 flutter test
 
 # Static analysis
@@ -70,9 +79,16 @@ npm run build
 
 ---
 
-## Deployment Status
-* **Locally Verified**: Yes (29/29 Flutter tests, 82/82 Backend tests, 0 analyzer issues, production build successful).
-* **Deployment-Ready**: Yes (Docker/Vercel/Neon compatible serverless configuration, no hardcoded secrets).
-* **Real Google Drive End-to-End Test**: **Real Google Drive end-to-end testing has NOT been performed yet.** (Mock and integration suite verified only).
-* **Actually Deployed**: **Not deployed** (Pending user approval).
+## Android Build Configuration
+* `compileSdk = 37` (required by `flutter_secure_storage`)
+* `targetSdk = 36`
+* `minSdk = 21`
+* Android Gradle Plugin = `9.0.1`
+* Gradle = `9.1.0`
+* Java = `21`
+* Release APK: `build/app/outputs/flutter-apk/app-release.apk` (successfully built)
 
+---
+
+## Documentation
+For complete technical specifications, see [APP_DOCUMENTATION.md](file:///d:/raman%20software/item_scanner/APP_DOCUMENTATION.md).
