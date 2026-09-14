@@ -29,7 +29,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String _kProductionBaseUrl = 'https://your-backend.example.com'; // Updated placeholder
+  static const String _kProductionBaseUrl = 'https://itemscanner.vercel.app';
 
   /// Default backend base URL.
   /// Defaults to production (https://itemscanner.vercel.app).

@@ -2,7 +2,7 @@
 
 Serverless Next.js (App Router) backend deployed on Vercel providing single-company management, Google Drive OAuth integration, private Vercel Blob catalog storage, and synchronization endpoints for the Flutter Item Scanner mobile application.
 
-**Production URL:** `https://item-scanner-beryl.vercel.app`
+**Production URL:** `https://itemscanner.vercel.app`
 
 ---
 
@@ -87,7 +87,7 @@ Template file: `.env.example` (names only):
 | `ADMIN_CREDENTIALS_VERSION` | Version tag to force credential reset on deploy |
 | `JWT_SECRET` | Cryptographic secret for signing session tokens (min 32 chars) |
 | `NODE_ENV` | `development` or `production` |
-| `APP_URL` | Base deployment URL (`https://item-scanner-beryl.vercel.app`) |
+| `APP_URL` | Base deployment URL (`https://itemscanner.vercel.app`) |
 | `GOOGLE_CLIENT_ID` | Google Cloud Console OAuth 2.0 Web Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google Cloud Console OAuth 2.0 Client Secret |
 | `GOOGLE_REDIRECT_URI` | Callback URL (`.../api/google-drive/callback`) |
