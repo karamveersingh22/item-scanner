@@ -124,6 +124,32 @@ class CloudSyncService {
     // Read local data version
     final localVersion = force ? null : await getLocalDataVersion();
 
+    // 2.5 One-click Drive -> Blob -> Phone: on manual SYNC, trigger Drive publish first
+    // After one-time /admin setup, client only uses Drive + this button, no website needed.
+    if (force) {
+      try {
+        stateNotifier.value = state.copyWith(
+          status: SyncStatusState.checking,
+          message: 'Syncing Google Drive to cloud...',
+        );
+        await _apiService.triggerSync(token: token);
+      } on ApiException catch (e) {
+        if (e.statusCode == 409) {
+          debugPrint('[CloudSyncService] Server sync already in progress, proceeding to fetch');
+        } else if (e.isUnauthorized || e.statusCode == 403) {
+          rethrow;
+        } else if (e.statusCode == 400) {
+          // Excel error (duplicate I_CODE, missing columns) - fail fast with message
+          rethrow;
+        } else if (e.isNetworkError || (e.statusCode != null && e.statusCode! >= 500)) {
+          // Transient - let outer retry handle
+          rethrow;
+        } else {
+          debugPrint('[CloudSyncService] Trigger warning: ${e.message}, trying fetch anyway');
+        }
+      }
+    }
+
     // 3. Retry loop with bounded exponential backoff
     int attempt = 0;
     while (true) {

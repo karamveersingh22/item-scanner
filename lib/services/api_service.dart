@@ -321,6 +321,80 @@ class ApiService {
     }
   }
 
+  /// Trigger server-side Drive -> Blob sync:
+  /// POST /api/sync/trigger - downloads Excel from Drive, publishes to Blob
+  /// Called by App's SYNC DATABASE button before fetching data, so client only needs Drive.
+  Future<void> triggerSync({
+    required String token,
+    String? overrideBaseUrl,
+  }) async {
+    final base = overrideBaseUrl ?? await getBaseUrl();
+    final uri = Uri.parse('$base/api/sync/trigger');
+
+    try {
+      _ensureNetworkAllowed();
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 60));
+
+      final Map<String, dynamic> body = _parseJsonResponse(response.body);
+
+      if (response.statusCode == 200 && body['success'] == true) {
+        return;
+      }
+
+      // 409 = sync already in progress (concurrent) - not an error for app
+      if (response.statusCode == 409) {
+        throw ApiException(
+          body['error']?.toString() ?? 'Sync already in progress',
+          statusCode: 409,
+        );
+      }
+
+      if (response.statusCode == 401) {
+        throw ApiException(
+          body['error']?.toString() ?? 'Authentication expired',
+          statusCode: 401,
+          isUnauthorized: true,
+        );
+      }
+
+      if (response.statusCode == 403) {
+        throw ApiException(
+          body['error']?.toString() ?? 'Account disabled',
+          statusCode: 403,
+          isForbidden: true,
+        );
+      }
+
+      if (response.statusCode == 400) {
+        throw ApiException(
+          body['error']?.toString() ?? 'Sync failed: Invalid Excel or Drive not configured',
+          statusCode: 400,
+        );
+      }
+
+      throw ApiException(
+        body['error']?.toString() ?? 'Sync trigger failed (${response.statusCode})',
+        statusCode: response.statusCode,
+      );
+    } on SocketException {
+      throw ApiException('Unable to connect to server.', isNetworkError: true);
+    } on TimeoutException {
+      throw ApiException('Sync trigger timed out.', isNetworkError: true);
+    } on ApiException {
+      rethrow;
+    } on http.ClientException catch (e) {
+      throw ApiException('Network error: ${e.message}', isNetworkError: true);
+    }
+  }
+
   Map<String, dynamic> _parseJsonResponse(String raw) {
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
