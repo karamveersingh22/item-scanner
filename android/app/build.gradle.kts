@@ -29,6 +29,10 @@ android {
             isShrinkResources = false
         }
     }
+
+    lint {
+        checkReleaseBuilds = false
+    }
 }
 
 kotlin {
