@@ -427,7 +427,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             controller: _serverUrlController,
             style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'e.g. https://item-scanner-beryl.vercel.app',
+              hintText: 'e.g. https://your-backend.example.com',
               hintStyle: GoogleFonts.outfit(color: Colors.white30, fontSize: 12),
               filled: true,
               fillColor: const Color(0xFF0A0A18),
