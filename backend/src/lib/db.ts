@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { CompanyConfig, CompanyStatus, SyncStatus, CatalogItem, CatalogCache } from './types';
 import { getStorage } from './storage';
 
@@ -109,19 +110,29 @@ export class SingleCompanyStore {
       const normalizedPasswordHash = normalizeBcryptHash(rawPasswordHash);
       const passwordHashValid = Boolean(normalizedPasswordHash && isValidBcryptHash(normalizedPasswordHash));
 
+      const rawPlainPassword = process.env.ADMIN_PASSWORD;
+      const plainPasswordPresent = Boolean(rawPlainPassword && rawPlainPassword.trim());
+      // Hash plain password on-the-fly if ADMIN_PASSWORD is provided (easier for quick changes)
+      let derivedPlainHash: string | null = null;
+      if (!passwordHashValid && plainPasswordPresent) {
+        derivedPlainHash = await bcrypt.hash(rawPlainPassword!.trim(), 12);
+      }
+
       let credentialsApplied = false;
       let persistenceSucceeded = false;
 
       if (versionMismatch) {
-        // Strict safe rule:
-        // Version is advanced ONLY after the requested credential reset
-        // has been completely and successfully applied and persisted.
-        // If password hash is invalid or missing, do NOT advance version and do NOT overwrite password.
-        if (passwordHashPresent && passwordHashValid) {
+        // Supports both: ADMIN_PASSWORD_HASH (bcrypt) and ADMIN_PASSWORD (plain text, auto-hashed)
+        // Version is advanced ONLY after credential reset is persisted.
+        const effectiveHash = passwordHashValid ? normalizedPasswordHash! : derivedPlainHash;
+        const hasPasswordUpdate = Boolean(effectiveHash);
+        if (hasPasswordUpdate || usernamePresent) {
           if (usernamePresent && targetUsername !== stored.username) {
             stored.username = targetUsername;
           }
-          stored.password_hash = normalizedPasswordHash!;
+          if (effectiveHash) {
+            stored.password_hash = effectiveHash;
+          }
           stored.admin_credentials_version = targetVersion;
           stored.updated_at = new Date();
           credentialsApplied = true;
@@ -143,6 +154,7 @@ export class SingleCompanyStore {
           usernamePresent,
           passwordHashPresent,
           passwordHashValid,
+          plainPasswordPresent,
           versionMismatch,
           credentialsApplied,
           persistenceSucceeded,
@@ -157,9 +169,15 @@ export class SingleCompanyStore {
     const now = new Date();
     const rawEnvPasswordHash = process.env.ADMIN_PASSWORD_HASH;
     const normalizedEnvHash = normalizeBcryptHash(rawEnvPasswordHash);
-    const initialPasswordHash = (normalizedEnvHash && isValidBcryptHash(normalizedEnvHash))
-      ? normalizedEnvHash
-      : FALLBACK_DEFAULT_PASSWORD_HASH;
+    const rawEnvPlainPassword = process.env.ADMIN_PASSWORD;
+    let initialPasswordHash: string;
+    if (normalizedEnvHash && isValidBcryptHash(normalizedEnvHash)) {
+      initialPasswordHash = normalizedEnvHash;
+    } else if (rawEnvPlainPassword && rawEnvPlainPassword.trim()) {
+      initialPasswordHash = await bcrypt.hash(rawEnvPlainPassword.trim(), 12);
+    } else {
+      initialPasswordHash = FALLBACK_DEFAULT_PASSWORD_HASH;
+    }
 
     const initialConfig: CompanyConfig = {
       id: DEFAULT_COMPANY_ID,
