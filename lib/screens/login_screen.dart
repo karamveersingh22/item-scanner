@@ -437,7 +437,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 8),
           Text(
-            'Default Production: https://item-scanner-beryl.vercel.app\nLocal Dev: http://10.0.2.2:3000 or http://127.0.0.1:3000',
+            'Default Production: https://itemscanner.vercel.app\nLocal Dev: http://10.0.2.2:3000 or http://127.0.0.1:3000',
             style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11),
           ),
         ],

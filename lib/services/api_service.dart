@@ -32,7 +32,7 @@ class ApiService {
   static const String _kProductionBaseUrl = 'https://your-backend.example.com'; // Updated placeholder
 
   /// Default backend base URL.
-  /// Defaults to production (https://item-scanner-beryl.vercel.app).
+  /// Defaults to production (https://itemscanner.vercel.app).
   /// Can be overridden at build time via:
   ///   --dart-define=BACKEND_BASE_URL=http://10.0.2.2:3000
   static String get defaultBaseUrl {
