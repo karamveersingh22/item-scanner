@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { authenticateRequest } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { downloadDriveFile, getDriveFileMetadata } from '@/lib/google-drive';
+import { downloadDriveFile, getDriveFileMetadata, findTargetSpreadsheet } from '@/lib/google-drive';
 import { parseExcelBuffer, ExcelValidationError } from '@/lib/excel-parser';
 import { apiError, apiSuccess } from '@/lib/response';
 
@@ -36,12 +36,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Verify an Excel spreadsheet file has been selected
-    if (!company.google_drive_file_id) {
-      return apiError(
-        'No Google Drive file has been selected as the Item Master source. Please select itemmast.xlsx in the management panel.',
-        400
-      );
+    // 2. Resolve target file: use stored file_id if valid, else auto-detect ITEMMAST.xlsx
+    let targetFileId = company.google_drive_file_id;
+    let targetFileName = company.google_drive_file_name;
+    let targetFolderId = company.google_drive_folder_id;
+
+    // If no stored file_id, or we want to auto-detect on every sync (simpler for client)
+    // Try stored file first, if not found (404), auto-detect
+    let useStoredFile = Boolean(targetFileId);
+
+    if (useStoredFile) {
+      try {
+        // Quick metadata check to verify stored file still exists
+        await getDriveFileMetadata(company);
+      } catch {
+        // Stored file not found (deleted/replaced), fall back to auto-detect
+        useStoredFile = false;
+      }
+    }
+
+    if (!useStoredFile) {
+      // Auto-detect: find ITEMMAST.xlsx (or only xlsx file)
+      const target = await findTargetSpreadsheet(company);
+      if (!target) {
+        return apiError(
+          'No Excel spreadsheet (.xlsx) found in Google Drive. Please upload ITEMMAST.xlsx first.',
+          400
+        );
+      }
+      targetFileId = target.id;
+      targetFileName = target.name;
+      // Persist the auto-detected file for future syncs
+      await db.updateCompanySyncState(company.id, {
+        google_drive_file_id: targetFileId,
+        google_drive_file_name: targetFileName,
+        google_drive_folder_id: targetFolderId,
+      });
     }
 
     // 3. Concurrent Sync Protection
@@ -59,9 +89,11 @@ export async function POST(request: NextRequest) {
     // Compares remote Drive md5Checksum with company.google_drive_md5 (NOT data_version)
     let remoteMetadata: { md5Checksum?: string; modifiedTime?: string } | null = null;
     try {
-      remoteMetadata = await getDriveFileMetadata(company);
+      if (targetFileId) {
+        remoteMetadata = await getDriveFileMetadata(company, targetFileId);
+      }
       if (
-        remoteMetadata.md5Checksum &&
+        remoteMetadata?.md5Checksum &&
         company.google_drive_md5 &&
         remoteMetadata.md5Checksum === company.google_drive_md5 &&
         company.item_count > 0
@@ -87,7 +119,8 @@ export async function POST(request: NextRequest) {
     const downloadStart = Date.now();
     let downloadResult: { buffer: Buffer; md5Checksum?: string; modifiedTime?: string };
     try {
-      downloadResult = await downloadDriveFile(company);
+      if (!targetFileId) throw new Error('No target file ID resolved');
+      downloadResult = await downloadDriveFile(company, targetFileId);
     } catch (err: any) {
       throw new Error(`Google Drive download failed: ${err.message}`);
     }
@@ -121,7 +154,7 @@ export async function POST(request: NextRequest) {
     const totalDuration = Date.now() - downloadStart;
 
     return apiSuccess({
-      message: `Successfully synchronized ${parseResult.item_count} items from ${company.google_drive_file_name || 'itemmast.xlsx'}.`,
+      message: `Successfully synchronized ${parseResult.item_count} items from ${targetFileName || 'itemmast.xlsx'}.`,
       item_count: parseResult.item_count,
       data_version: parseResult.data_version,
       google_drive_md5: finalDriveMd5,

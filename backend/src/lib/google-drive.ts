@@ -238,6 +238,32 @@ export async function listSpreadsheetsInDrive(company: Company): Promise<DriveFi
 }
 
 /**
+ * Find the target ITEMMAST.xlsx file.
+ * Strategy: prefer exact name match "ITEMMAST.xlsx" (case-insensitive), newest first.
+ * Falls back to any .xlsx if only one exists.
+ */
+export async function findTargetSpreadsheet(company: Company): Promise<DriveFileItem | null> {
+  const files = await listSpreadsheetsInDrive(company);
+  if (!files.length) return null;
+
+  // Prefer exact name match (case-insensitive)
+  const exactMatches = files.filter(f => f.name.toLowerCase() === 'itemmast.xlsx');
+  if (exactMatches.length > 0) {
+    exactMatches.sort((a, b) => new Date(b.modifiedTime || 0).getTime() - new Date(a.modifiedTime || 0).getTime());
+    return exactMatches[0];
+  }
+
+  // If only one xlsx file exists, use it
+  if (files.length === 1) {
+    return files[0];
+  }
+
+  // Multiple files but no exact name match - return newest
+  files.sort((a, b) => new Date(b.modifiedTime || 0).getTime() - new Date(a.modifiedTime || 0).getTime());
+  return files[0];
+}
+
+/**
  * Test & Development Mock Store for Drive Files
  */
 interface MockDriveFileData {
@@ -259,13 +285,15 @@ export function clearMockDriveFiles() {
 
 /**
  * Fetch Drive file metadata (modifiedTime, size, md5Checksum) for change-detection optimization.
+ * Optional fileId overrides company.google_drive_file_id (for auto-detected files).
  */
-export async function getDriveFileMetadata(company: Company): Promise<{
+export async function getDriveFileMetadata(company: Company, fileId?: string): Promise<{
   modifiedTime?: string;
   size?: string;
   md5Checksum?: string;
 }> {
-  if (!company.google_drive_file_id) {
+  const targetFileId = fileId || company.google_drive_file_id;
+  if (!targetFileId) {
     throw new Error('No Google Drive file selected.');
   }
 
@@ -289,7 +317,7 @@ export async function getDriveFileMetadata(company: Company): Promise<{
   }
 
   const fields = 'id,name,mimeType,modifiedTime,size,md5Checksum';
-  const url = `https://www.googleapis.com/drive/v3/files/${company.google_drive_file_id}?fields=${encodeURIComponent(fields)}`;
+  const url = `https://www.googleapis.com/drive/v3/files/${targetFileId}?fields=${encodeURIComponent(fields)}`;
 
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -309,14 +337,16 @@ export async function getDriveFileMetadata(company: Company): Promise<{
 
 /**
  * Downloads the binary contents of the company's selected Google Drive file.
+ * Optional fileId overrides company.google_drive_file_id (for auto-detected files).
  */
-export async function downloadDriveFile(company: Company): Promise<{
+export async function downloadDriveFile(company: Company, fileId?: string): Promise<{
   buffer: Buffer;
   md5Checksum?: string;
   modifiedTime?: string;
   size?: number;
 }> {
-  if (!company.google_drive_file_id) {
+  const targetFileId = fileId || company.google_drive_file_id;
+  if (!targetFileId) {
     throw new Error('No Google Drive file selected for this company.');
   }
 
@@ -393,7 +423,7 @@ export async function downloadDriveFile(company: Company): Promise<{
   }
 
   // Live Google Drive API Media Download
-  const url = `https://www.googleapis.com/drive/v3/files/${company.google_drive_file_id}?alt=media`;
+  const url = `https://www.googleapis.com/drive/v3/files/${targetFileId}?alt=media`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
