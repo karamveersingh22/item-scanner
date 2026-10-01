@@ -130,10 +130,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String lastSyncTime = '';
   Timer? _periodicSyncTimer;
 
+  // Selected customer category (default 'b')
+  String _selectedCategory = 'b';
+
   late AnimationController _slideCtrl;
   late AnimationController _pulseCtrl;
   late Animation<Offset> _slideAnim;
   late Animation<double> _pulseAnim;
+
+  static const List<String> _categories = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'
+  ];
 
   @override
   void initState() {
@@ -256,6 +263,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       status.toLowerCase().contains('not found');
 
   bool get _isSuccess => status.contains('\u2713');
+
+  String _getDiscColumn(String category) {
+    switch (category.toLowerCase()) {
+      case 'a': return 'DISC_A';
+      case 'b': return 'DISC_B';
+      case 'c': return 'DISC_C';
+      case 'd': return 'DISC_D';
+      case 'e': return 'DISC_E';
+      case 'f': return 'DISC_F';
+      case 'g': return 'DISC_G';
+      case 'h': return 'DISC_H';
+      case 'i': return 'DISC_I';
+      case 'j': return 'DISC_J';
+      case 'k': return 'DISC_K';
+      case 'l': return 'DISC_L';
+      case 'm': return 'DISC_M';
+      case 'n': return 'DISC_N';
+      default: return 'DISC_B';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -643,10 +670,48 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Padding(padding: const EdgeInsets.all(14), child: Column(children: [
             _tile('ITEM NAME', item!['ITEM_NAME'], Icons.inventory_2_outlined, const Color(0xFF42A5F5)),
             _tile('DESCRIPTION', item!['DESCRIBE'], Icons.description_outlined, const Color(0xFFAB47BC)),
+            const SizedBox(height: 8),
+            // Category Dropdown
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: _kBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedCategory,
+                  isExpanded: true,
+                  icon: Icon(Icons.keyboard_arrow_down_rounded, color: _kOrange, size: 24),
+                  dropdownColor: _kCard,
+                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                  items: _categories.map((cat) => DropdownMenuItem(
+                    value: cat,
+                    child: Text('Category ${cat.toUpperCase()}', style: GoogleFonts.outfit(color: Colors.white, fontSize: 14)),
+                  )).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedCategory = val);
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(children: [
               Expanded(flex: 2, child: _tile('QUANTITY', item!['QUANTITY'], Icons.numbers_rounded, const Color(0xFF26C6DA))),
               const SizedBox(width: 10),
-              Expanded(flex: 3, child: _tile('RATE*(100-DISC_B)/100', DatabaseService.calculateDiscountedRate(item!['RATE'], item!['DISC_B']), Icons.currency_rupee_rounded, _kOrange)),
+              Expanded(flex: 3, child: _tile(
+                'PRICE (Category ${_selectedCategory.toUpperCase()})',
+                DatabaseService.calculatePriceAfterTax(
+                  item!['RATE'],
+                  item![_getDiscColumn(_selectedCategory)],
+                  item!['TAX_PER'],
+                ),
+                Icons.currency_rupee_rounded,
+                _kOrange,
+              )),
             ]),
           ])),
         ]),

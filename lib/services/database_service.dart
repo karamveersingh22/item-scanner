@@ -38,52 +38,112 @@ class DatabaseService {
         // the latest XLSX from Google Drive automatically.
         await db.execute('''
           CREATE TABLE IF NOT EXISTS items (
-            I_CODE    TEXT PRIMARY KEY,
-            ITEM_NAME TEXT,
-            DESCRIBE  TEXT,
-            QUANTITY  TEXT,
-            RATE      TEXT,
-            DISC_PER  TEXT,
-            DISC_B    TEXT
+            I_CODE      TEXT PRIMARY KEY,
+            ITEM_NAME   TEXT,
+            DESCRIBE    TEXT,
+            QUANTITY    TEXT,
+            RATE        TEXT,
+            DISC_PER    TEXT,
+            DISC_A      TEXT,
+            DISC_B      TEXT,
+            DISC_C      TEXT,
+            DISC_D      TEXT,
+            DISC_E      TEXT,
+            DISC_F      TEXT,
+            DISC_G      TEXT,
+            DISC_H      TEXT,
+            DISC_I      TEXT,
+            DISC_J      TEXT,
+            DISC_K      TEXT,
+            DISC_L      TEXT,
+            DISC_M      TEXT,
+            DISC_N      TEXT,
+            TAX_PER     TEXT
           )
         ''');
         await db.execute('''
           CREATE TABLE IF NOT EXISTS items_staging (
-            I_CODE    TEXT PRIMARY KEY,
-            ITEM_NAME TEXT,
-            DESCRIBE  TEXT,
-            QUANTITY  TEXT,
-            RATE      TEXT,
-            DISC_PER  TEXT,
-            DISC_B    TEXT
+            I_CODE      TEXT PRIMARY KEY,
+            ITEM_NAME   TEXT,
+            DESCRIBE    TEXT,
+            QUANTITY    TEXT,
+            RATE        TEXT,
+            DISC_PER    TEXT,
+            DISC_A      TEXT,
+            DISC_B      TEXT,
+            DISC_C      TEXT,
+            DISC_D      TEXT,
+            DISC_E      TEXT,
+            DISC_F      TEXT,
+            DISC_G      TEXT,
+            DISC_H      TEXT,
+            DISC_I      TEXT,
+            DISC_J      TEXT,
+            DISC_K      TEXT,
+            DISC_L      TEXT,
+            DISC_M      TEXT,
+            DISC_N      TEXT,
+            TAX_PER     TEXT
           )
         ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          try {
-            await db.execute('ALTER TABLE items ADD COLUMN DISC_B TEXT');
-          } catch (_) {}
+        if (oldVersion < 3) {
+          // Add all new discount columns and tax_per
+          final columns = [
+            'DISC_A', 'DISC_C', 'DISC_D', 'DISC_E', 'DISC_F',
+            'DISC_G', 'DISC_H', 'DISC_I', 'DISC_J', 'DISC_K',
+            'DISC_L', 'DISC_M', 'DISC_N', 'TAX_PER'
+          ];
+          for (final col in columns) {
+            try {
+              await db.execute('ALTER TABLE items ADD COLUMN $col TEXT');
+            } catch (_) {}
+            try {
+              await db.execute('ALTER TABLE items_staging ADD COLUMN $col TEXT');
+            } catch (_) {}
+          }
         }
       },
     );
 
-    // Defensive check: ensure DISC_B column exists in case of unversioned/copied DB
-    try {
-      await db.execute('ALTER TABLE items ADD COLUMN DISC_B TEXT');
-    } catch (_) {}
+    // Defensive check: ensure all columns exist in case of unversioned/copied DB
+    final allColumns = [
+      'DISC_B', 'DISC_A', 'DISC_C', 'DISC_D', 'DISC_E', 'DISC_F',
+      'DISC_G', 'DISC_H', 'DISC_I', 'DISC_J', 'DISC_K', 'DISC_L',
+      'DISC_M', 'DISC_N', 'TAX_PER'
+    ];
+    for (final col in allColumns) {
+      try {
+        await db.execute('ALTER TABLE items ADD COLUMN $col TEXT');
+      } catch (_) {}
+    }
 
     // Defensive check: ensure items_staging table exists for Stage 7 atomic sync
     try {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS items_staging (
-          I_CODE    TEXT PRIMARY KEY,
-          ITEM_NAME TEXT,
-          DESCRIBE  TEXT,
-          QUANTITY  TEXT,
-          RATE      TEXT,
-          DISC_PER  TEXT,
-          DISC_B    TEXT
+          I_CODE      TEXT PRIMARY KEY,
+          ITEM_NAME   TEXT,
+          DESCRIBE    TEXT,
+          QUANTITY    TEXT,
+          RATE        TEXT,
+          DISC_PER    TEXT,
+          DISC_A      TEXT,
+          DISC_B      TEXT,
+          DISC_C      TEXT,
+          DISC_D      TEXT,
+          DISC_E      TEXT,
+          DISC_F      TEXT,
+          DISC_G      TEXT,
+          DISC_H      TEXT,
+          DISC_I      TEXT,
+          DISC_J      TEXT,
+          DISC_K      TEXT,
+          DISC_L      TEXT,
+          DISC_M      TEXT,
+          DISC_N      TEXT,
+          TAX_PER     TEXT
         )
       ''');
     } catch (_) {}
@@ -99,10 +159,10 @@ class DatabaseService {
   }
 
   // --------------------------------------------------
-  // CALCULATE DISCOUNTED RATE: RATE * (100 - DISC_B) / 100
+  // CALCULATE DISCOUNTED RATE: RATE * (100 - DISC_X) / 100
   // --------------------------------------------------
 
-  static String calculateDiscountedRate(dynamic rawRate, dynamic rawDiscB) {
+  static String calculateDiscountedRate(dynamic rawRate, dynamic rawDisc) {
     if (rawRate == null) return '';
     final cleanedRate = rawRate
         .toString()
@@ -115,14 +175,39 @@ class DatabaseService {
     final rate = double.tryParse(cleanedRate);
     if (rate == null) return rawRate.toString().trim();
 
-    final cleanedDiscB = (rawDiscB?.toString() ?? '')
+    final cleanedDisc = (rawDisc?.toString() ?? '')
         .replaceAll('%', '')
         .replaceAll(',', '')
         .trim();
-    final discB = double.tryParse(cleanedDiscB) ?? 0.0;
+    final disc = double.tryParse(cleanedDisc) ?? 0.0;
 
-    final finalRate = rate * (100.0 - discB) / 100.0;
+    final finalRate = rate * (100.0 - disc) / 100.0;
     final fixed2 = finalRate.toStringAsFixed(2);
+    if (fixed2.endsWith('.00')) {
+      return fixed2.substring(0, fixed2.length - 3);
+    }
+    return fixed2;
+  }
+
+  // --------------------------------------------------
+  // CALCULATE PRICE AFTER TAX: discounted_rate * (100 + TAX_PER) / 100
+  // --------------------------------------------------
+
+  static String calculatePriceAfterTax(dynamic rawRate, dynamic rawDisc, dynamic rawTaxPer) {
+    final discountedRateStr = calculateDiscountedRate(rawRate, rawDisc);
+    if (discountedRateStr.isEmpty) return '';
+
+    final cleanedTax = (rawTaxPer?.toString() ?? '')
+        .replaceAll('%', '')
+        .replaceAll(',', '')
+        .trim();
+    final taxPer = double.tryParse(cleanedTax) ?? 0.0;
+
+    if (taxPer == 0) return discountedRateStr;
+
+    final discountedRate = double.tryParse(discountedRateStr) ?? 0.0;
+    final priceAfterTax = discountedRate * (100.0 + taxPer) / 100.0;
+    final fixed2 = priceAfterTax.toStringAsFixed(2);
     if (fixed2.endsWith('.00')) {
       return fixed2.substring(0, fixed2.length - 3);
     }

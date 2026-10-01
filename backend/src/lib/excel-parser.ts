@@ -9,6 +9,20 @@ export interface ParsedItem {
   rate: string | null;
   disc_per: string | null;
   disc_b: string | null;
+  disc_a: string | null;
+  disc_c: string | null;
+  disc_d: string | null;
+  disc_e: string | null;
+  disc_f: string | null;
+  disc_g: string | null;
+  disc_h: string | null;
+  disc_i: string | null;
+  disc_j: string | null;
+  disc_k: string | null;
+  disc_l: string | null;
+  disc_m: string | null;
+  disc_n: string | null;
+  tax_per: string | null;
 }
 
 export interface ParseResult {
@@ -118,6 +132,20 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
   let rateCol: number | null = null;
   let discPerCol: number | null = null;
   let discBCol: number | null = null;
+  let discACol: number | null = null;
+  let discCCol: number | null = null;
+  let discDCol: number | null = null;
+  let discECol: number | null = null;
+  let discFCol: number | null = null;
+  let discGCol: number | null = null;
+  let discHCol: number | null = null;
+  let discICol: number | null = null;
+  let discJCol: number | null = null;
+  let discKCol: number | null = null;
+  let discLCol: number | null = null;
+  let discMCol: number | null = null;
+  let discNCol: number | null = null;
+  let taxPerCol: number | null = null;
 
   const items: ParsedItem[] = [];
   const seenICodes = new Set<string>();
@@ -164,7 +192,21 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
         else if (name === 'QUANTITY') quantityCol = idx;
         else if (name === 'RATE') rateCol = idx;
         else if (name === 'DISC_PER') discPerCol = idx;
+        else if (name === 'DISC_A' || name === 'DISC A' || name === 'DISCA') discACol = idx;
         else if (name === 'DISC_B' || name === 'DISC B' || name === 'DISCB') discBCol = idx;
+        else if (name === 'DISC_C' || name === 'DISC C' || name === 'DISCC') discCCol = idx;
+        else if (name === 'DISC_D' || name === 'DISC D' || name === 'DISCD') discDCol = idx;
+        else if (name === 'DISC_E' || name === 'DISC E' || name === 'DISCE') discECol = idx;
+        else if (name === 'DISC_F' || name === 'DISC F' || name === 'DISCF') discFCol = idx;
+        else if (name === 'DISC_G' || name === 'DISC G' || name === 'DISCG') discGCol = idx;
+        else if (name === 'DISC_H' || name === 'DISC H' || name === 'DISCH') discHCol = idx;
+        else if (name === 'DISC_I' || name === 'DISC I' || name === 'DISCI') discICol = idx;
+        else if (name === 'DISC_J' || name === 'DISC J' || name === 'DISCJ') discJCol = idx;
+        else if (name === 'DISC_K' || name === 'DISC K' || name === 'DISCK') discKCol = idx;
+        else if (name === 'DISC_L' || name === 'DISC L' || name === 'DISCL') discLCol = idx;
+        else if (name === 'DISC_M' || name === 'DISC M' || name === 'DISCM') discMCol = idx;
+        else if (name === 'DISC_N' || name === 'DISC N' || name === 'DISC N') discNCol = idx;
+        else if (name === 'TAX_PER' || name === 'TAX PER' || name === 'TAXPER') taxPerCol = idx;
       }
 
       // Validate required columns
@@ -207,7 +249,21 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
       quantity: quantityCol !== null && rowData[quantityCol] ? rowData[quantityCol] : null,
       rate: rateCol !== null && rowData[rateCol] ? rowData[rateCol] : null,
       disc_per: discPerCol !== null && rowData[discPerCol] ? rowData[discPerCol] : null,
+      disc_a: discACol !== null && rowData[discACol] ? rowData[discACol] : null,
       disc_b: discBCol !== null && rowData[discBCol] ? rowData[discBCol] : null,
+      disc_c: discCCol !== null && rowData[discCCol] ? rowData[discCCol] : null,
+      disc_d: discDCol !== null && rowData[discDCol] ? rowData[discDCol] : null,
+      disc_e: discECol !== null && rowData[discECol] ? rowData[discECol] : null,
+      disc_f: discFCol !== null && rowData[discFCol] ? rowData[discFCol] : null,
+      disc_g: discGCol !== null && rowData[discGCol] ? rowData[discGCol] : null,
+      disc_h: discHCol !== null && rowData[discHCol] ? rowData[discHCol] : null,
+      disc_i: discICol !== null && rowData[discICol] ? rowData[discICol] : null,
+      disc_j: discJCol !== null && rowData[discJCol] ? rowData[discJCol] : null,
+      disc_k: discKCol !== null && rowData[discKCol] ? rowData[discKCol] : null,
+      disc_l: discLCol !== null && rowData[discLCol] ? rowData[discLCol] : null,
+      disc_m: discMCol !== null && rowData[discMCol] ? rowData[discMCol] : null,
+      disc_n: discNCol !== null && rowData[discNCol] ? rowData[discNCol] : null,
+      tax_per: taxPerCol !== null && rowData[taxPerCol] ? rowData[taxPerCol] : null,
     });
   }
 
