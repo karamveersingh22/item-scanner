@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { authenticateRequest } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { downloadDriveFile, getDriveFileMetadata, findTargetSpreadsheet } from '@/lib/google-drive';
+import { downloadDriveFile, getDriveFileMetadata, findTargetSpreadsheet, DriveFileItem } from '@/lib/google-drive';
 import { parseExcelBuffer, ExcelValidationError } from '@/lib/excel-parser';
 import { apiError, apiSuccess } from '@/lib/response';
 
@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
       try {
         // Quick metadata check to verify stored file still exists
         await getDriveFileMetadata(company);
-      } catch {
+      } catch (err: any) {
+        console.warn('Stored file metadata check failed, falling back to auto-detect:', err.message);
         // Stored file not found (deleted/replaced), fall back to auto-detect
         useStoredFile = false;
       }
@@ -57,7 +58,24 @@ export async function POST(request: NextRequest) {
 
     if (!useStoredFile) {
       // Auto-detect: find ITEMMAST.xlsx (or only xlsx file)
-      const target = await findTargetSpreadsheet(company);
+      let target: DriveFileItem | null = null;
+      try {
+        target = await findTargetSpreadsheet(company);
+      } catch (err: any) {
+        console.error('Auto-detect failed:', err.message);
+        // Check if it's an auth error (token expired)
+        if (err.message?.includes('401') || err.message?.includes('403') || err.message?.includes('unauthorized') || err.message?.includes('invalid_grant')) {
+          return apiError(
+            'Google Drive authorization expired. Please reconnect Drive in the admin panel.',
+            401
+          );
+        }
+        return apiError(
+          `Failed to list Drive files: ${err.message}`,
+          500
+        );
+      }
+      
       if (!target) {
         return apiError(
           'No Excel spreadsheet (.xlsx) found in Google Drive. Please upload ITEMMAST.xlsx first.',
@@ -122,6 +140,11 @@ export async function POST(request: NextRequest) {
       if (!targetFileId) throw new Error('No target file ID resolved');
       downloadResult = await downloadDriveFile(company, targetFileId);
     } catch (err: any) {
+      console.error('Drive download failed:', err.message);
+      // Check for auth errors
+      if (err.message?.includes('401') || err.message?.includes('403') || err.message?.includes('unauthorized') || err.message?.includes('invalid_grant')) {
+        throw new Error('Google Drive authorization expired. Please reconnect Drive in the admin panel.');
+      }
       throw new Error(`Google Drive download failed: ${err.message}`);
     }
 
@@ -135,7 +158,13 @@ export async function POST(request: NextRequest) {
 
     // 6. Validate & Parse Excel File
     // Enforces mandatory columns, preserves leading zeros in I_CODE, and rejects duplicate I_CODEs
-    const parseResult = parseExcelBuffer(buffer);
+    let parseResult: { items: any[]; item_count: number; data_version: string };
+    try {
+      parseResult = parseExcelBuffer(buffer);
+    } catch (err: any) {
+      console.error('Excel parse failed:', err.message);
+      throw new Error(`Invalid Excel file: ${err.message}`);
+    }
 
     // 7. Atomic Database Ingestion
     // Saves new Drive md5Checksum into google_drive_md5, deterministic catalog hash into data_version,
