@@ -205,7 +205,7 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
         else if (name === 'DISC_K' || name === 'DISC K' || name === 'DISCK') discKCol = idx;
         else if (name === 'DISC_L' || name === 'DISC L' || name === 'DISCL') discLCol = idx;
         else if (name === 'DISC_M' || name === 'DISC M' || name === 'DISCM') discMCol = idx;
-        else if (name === 'DISC_N' || name === 'DISC N' || name === 'DISC N') discNCol = idx;
+        else if (name === 'DISC_N' || name === 'DISC N' || name === 'DISCN') discNCol = idx;
         else if (name === 'TAX_PER' || name === 'TAX PER' || name === 'TAXPER') taxPerCol = idx;
       }
 

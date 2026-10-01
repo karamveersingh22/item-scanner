@@ -30,7 +30,7 @@ class DatabaseService {
     // safely run even before the first Google Drive sync.
     final db = await openDatabase(
       databasePath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         // Fresh install -- no bundled asset database.
         // Create an empty schema.  checkForDatabaseUpdate()
@@ -107,16 +107,21 @@ class DatabaseService {
       },
     );
 
-    // Defensive check: ensure all columns exist in case of unversioned/copied DB
-    final allColumns = [
-      'DISC_B', 'DISC_A', 'DISC_C', 'DISC_D', 'DISC_E', 'DISC_F',
+    // Defensive schema repair: guarantee BOTH tables carry every catalog column.
+    // Required because a v2 database (created by an older APK) has items_staging
+    // without DISC_A..DISC_N / TAX_PER, which makes staging inserts fail with
+    // "no such column" and previously surfaced as "found 0 in staging table".
+    const repairColumns = [
+      'DISC_A', 'DISC_B', 'DISC_C', 'DISC_D', 'DISC_E', 'DISC_F',
       'DISC_G', 'DISC_H', 'DISC_I', 'DISC_J', 'DISC_K', 'DISC_L',
       'DISC_M', 'DISC_N', 'TAX_PER'
     ];
-    for (final col in allColumns) {
-      try {
-        await db.execute('ALTER TABLE items ADD COLUMN $col TEXT');
-      } catch (_) {}
+    for (final table in ['items', 'items_staging']) {
+      for (final col in repairColumns) {
+        try {
+          await db.execute('ALTER TABLE $table ADD COLUMN $col TEXT');
+        } catch (_) {}
+      }
     }
 
     // Defensive check: ensure items_staging table exists for Stage 7 atomic sync
@@ -146,6 +151,43 @@ class DatabaseService {
           TAX_PER     TEXT
         )
       ''');
+    } catch (_) {}
+
+    // If a legacy items_staging table could not be altered (e.g. it exists in a
+    // shape ALTER TABLE cannot extend), rebuild it. Staging is always transient,
+    // so dropping it is safe: the active `items` catalog is never touched.
+    try {
+      final stagingCols = (await db.rawQuery('PRAGMA table_info(items_staging)'))
+          .map((r) => r['name'] as String)
+          .toSet();
+      if (!stagingCols.contains('TAX_PER')) {
+        await db.execute('DROP TABLE IF EXISTS items_staging');
+        await db.execute('''
+          CREATE TABLE items_staging (
+            I_CODE      TEXT PRIMARY KEY,
+            ITEM_NAME   TEXT,
+            DESCRIBE    TEXT,
+            QUANTITY    TEXT,
+            RATE        TEXT,
+            DISC_PER    TEXT,
+            DISC_A      TEXT,
+            DISC_B      TEXT,
+            DISC_C      TEXT,
+            DISC_D      TEXT,
+            DISC_E      TEXT,
+            DISC_F      TEXT,
+            DISC_G      TEXT,
+            DISC_H      TEXT,
+            DISC_I      TEXT,
+            DISC_J      TEXT,
+            DISC_K      TEXT,
+            DISC_L      TEXT,
+            DISC_M      TEXT,
+            DISC_N      TEXT,
+            TAX_PER     TEXT
+          )
+        ''');
+      }
     } catch (_) {}
 
     // Make I_CODE searches extremely fast.
@@ -301,7 +343,20 @@ class DatabaseService {
     final db = await database;
     return await db.transaction<int>((txn) async {
       await txn.execute('DELETE FROM items');
-      await txn.execute('INSERT INTO items SELECT * FROM items_staging');
+      await txn.execute('''
+        INSERT INTO items (
+          I_CODE, ITEM_NAME, DESCRIBE, QUANTITY, RATE, DISC_PER,
+          DISC_A, DISC_B, DISC_C, DISC_D, DISC_E, DISC_F, DISC_G,
+          DISC_H, DISC_I, DISC_J, DISC_K, DISC_L, DISC_M, DISC_N,
+          TAX_PER
+        )
+        SELECT
+          I_CODE, ITEM_NAME, DESCRIBE, QUANTITY, RATE, DISC_PER,
+          DISC_A, DISC_B, DISC_C, DISC_D, DISC_E, DISC_F, DISC_G,
+          DISC_H, DISC_I, DISC_J, DISC_K, DISC_L, DISC_M, DISC_N,
+          TAX_PER
+        FROM items_staging
+      ''');
       await txn.execute('DELETE FROM items_staging');
       final result = await txn.rawQuery('SELECT COUNT(*) AS count FROM items');
       return Sqflite.firstIntValue(result) ?? 0;

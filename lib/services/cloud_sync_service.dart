@@ -296,7 +296,7 @@ class CloudSyncService {
       message: 'Downloading catalog (0 / $totalItems)...',
     );
 
-    void validateAndStage(List<dynamic> items) {
+    Future<void> validateAndStage(List<dynamic> items) async {
       final rowsToInsert = <Map<String, dynamic>>[];
       for (final it in items) {
         final syncItem = it;
@@ -317,11 +317,11 @@ class CloudSyncService {
         rowsToInsert.add(syncItem.toMap());
       }
 
-      _dbService.insertStagingBatch(rowsToInsert);
+      await _dbService.insertStagingBatch(rowsToInsert);
       totalDownloaded += rowsToInsert.length;
     }
 
-    validateAndStage(firstPage.items);
+    await validateAndStage(firstPage.items);
 
     stateNotifier.value = state.copyWith(
       downloadedCount: totalDownloaded,
@@ -344,7 +344,7 @@ class CloudSyncService {
         );
       }
 
-      validateAndStage(page.items);
+      await validateAndStage(page.items);
 
       stateNotifier.value = state.copyWith(
         downloadedCount: totalDownloaded,
