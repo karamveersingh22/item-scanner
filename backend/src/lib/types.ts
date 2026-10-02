@@ -8,7 +8,21 @@ export interface CatalogItem {
   quantity: string | null;
   rate: string | null;
   disc_per: string | null;
+  disc_a: string | null;
   disc_b: string | null;
+  disc_c: string | null;
+  disc_d: string | null;
+  disc_e: string | null;
+  disc_f: string | null;
+  disc_g: string | null;
+  disc_h: string | null;
+  disc_i: string | null;
+  disc_j: string | null;
+  disc_k: string | null;
+  disc_l: string | null;
+  disc_m: string | null;
+  disc_n: string | null;
+  tax_per: string | null;
 }
 
 export interface CatalogCache {

@@ -1,0 +1,34 @@
+=== PROMPT FOR NEW AI CHAT ===
+
+You are an AI agent taking over an item-scanner project.
+
+The app shows wrong tax-inclusive prices: category B is correct, all other categories show raw RATE (discount=0, tax=0).
+
+ROOT CAUSE (already identified):
+- Backend `excel-parser.ts` `data_version` hash only included `i_code|rate|quantity|disc_per|disc_b`
+- When `DISC_A`-`DISC_N` and `TAX_PER` columns were added to the spreadsheet, the hash didn't change
+- Devices already holding that `data_version` received `{ up_to_date: true }` and never re-downloaded
+- Their SQLite `DISC_A`...`DISC_N` and `TAX_PER` columns stayed NULL (0 discount, 0 tax)
+- Category B had `DISC_B` populated from schema v2 → appeared correct
+
+CODE CHANGES ALREADY MADE (do NOT re-apply):
+- `backend/src/lib/excel-parser.ts:282-297` — extended `data_version` MD5 hash to include all 15 discount/tax columns
+- `APP_DOCUMENTATION.md` — added versioning invariants table and §B5 root-cause doc
+- `changes_for_the_problems.md` — this file with full problem history
+
+WHY FIXES SO FAR DIDN'T RESOLVE:
+- Drive re-upload: sync trigger short-circuits on unchanged `google_drive_md5`, reuses old Blob catalog (which only has 7 columns, missing `disc_a`-`disc_n`, `tax_per`). API response confirmed: items have no `disc_a`, `disc_c`, `tax_per`, etc.
+- Fresh install+rebuild: same issue — sync downloaded the old Blob catalog, not the freshly parsed one with all columns
+
+WHAT NEEDS TO HAPPEN NEXT (for the new AI agent):
+1. Force a new catalog publish from the backend:
+   Option A: In Google Drive, rename/replace `ITEMMAST.xlsx` (changes MD5) → trigger re-parses → publishes fresh catalog with all 21 columns to Vercel Blob.
+   Option B: Modify the sync trigger to always download+parse from Drive, but only write to Vercel Blob if the new `data_version` differs from what's already stored.
+2. Then on device: uninstall app, install fresh APK, press `SYNC DATABASE` → downloads fresh catalog → verify `15951` = `1458.95` for B, `1499.74` for D.
+
+FILES PROVIDED:
+- `changes_for_the_problems.md` — full problem history and context
+- `backend/src/lib/excel-parser.ts` — hash fix already applied (lines 282-297)
+- `APP_DOCUMENTATION.md` — versioning invariants and root-cause doc §B5
+
+=== END PROMPT ===

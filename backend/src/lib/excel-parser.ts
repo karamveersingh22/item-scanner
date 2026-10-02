@@ -1,6 +1,18 @@
 import AdmZip from 'adm-zip';
 import crypto from 'crypto';
 
+/**
+ * PARSER_SCHEMA_VERSION — Increment this whenever the set of columns included
+ * in the catalog or in the data_version hash changes.  This value is mixed
+ * into the MD5 hash so that an unchanged spreadsheet still produces a *new*
+ * data_version, forcing every device to re-download.
+ *
+ * History:
+ *   1 — original 7-column schema (i_code, item_name, describe, quantity, rate, disc_per, disc_b)
+ *   2 — added disc_a..disc_n + tax_per (21 columns total)
+ */
+export const PARSER_SCHEMA_VERSION = 2;
+
 export interface ParsedItem {
   i_code: string;
   item_name: string | null;
@@ -287,6 +299,7 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
   // { up_to_date: true } and never re-downloaded, leaving the new columns NULL --
   // which presented as "only category B is priced correctly".
   const hash = crypto.createHash('md5');
+  hash.update(`schema_v${PARSER_SCHEMA_VERSION}:`);
   hash.update(String(items.length));
   for (const item of items) {
     hash.update(

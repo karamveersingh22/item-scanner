@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { authenticateRequest } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { downloadDriveFile, getDriveFileMetadata, findTargetSpreadsheet, DriveFileItem } from '@/lib/google-drive';
-import { parseExcelBuffer, ExcelValidationError } from '@/lib/excel-parser';
+import { parseExcelBuffer, ExcelValidationError, PARSER_SCHEMA_VERSION } from '@/lib/excel-parser';
 import { apiError, apiSuccess } from '@/lib/response';
 
 /**
@@ -103,14 +103,45 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. No-Change Optimization
-    // Check if the selected Drive file has changed since the last successful synchronization
-    // Compares remote Drive md5Checksum with company.google_drive_md5 (NOT data_version)
+    // Check if the selected Drive file has changed since the last successful synchronization.
+    // Compares remote Drive md5Checksum with company.google_drive_md5 (NOT data_version).
+    //
+    // IMPORTANT: Also bypasses this short-circuit when PARSER_SCHEMA_VERSION has changed
+    // since the last catalog was published. This ensures that parser schema upgrades
+    // (e.g. adding disc_a..disc_n + tax_per) force a re-parse even if the Drive file
+    // itself hasn't changed.
     let remoteMetadata: { md5Checksum?: string; modifiedTime?: string } | null = null;
+    let schemaUpgradeNeeded = false;
+
+    // Detect schema upgrade: if the current data_version was computed with an older
+    // PARSER_SCHEMA_VERSION, the catalog in Blob is stale and must be re-published.
+    if (company.data_version) {
+      // Re-parsing the same file with the new schema version will produce a different
+      // data_version hash (because PARSER_SCHEMA_VERSION is mixed in). If the stored
+      // data_version was produced with an older schema, we need to force re-parse.
+      // We detect this cheaply: check if any existing catalog item has the new fields.
+      try {
+        const currentCatalog = await db.getCompanyItems(company.id, { limit: 1 });
+        if (currentCatalog.items.length > 0) {
+          const sampleItem = currentCatalog.items[0] as any;
+          // If disc_a is missing from the stored catalog, schema upgrade is needed
+          if (sampleItem.disc_a === undefined && sampleItem.disc_a !== null) {
+            schemaUpgradeNeeded = true;
+            console.log(`Schema upgrade detected: PARSER_SCHEMA_VERSION=${PARSER_SCHEMA_VERSION}, catalog missing new columns. Forcing re-parse.`);
+          }
+        }
+      } catch {
+        // If we can't check, assume upgrade is needed to be safe
+        schemaUpgradeNeeded = true;
+      }
+    }
+
     try {
       if (targetFileId) {
         remoteMetadata = await getDriveFileMetadata(company, targetFileId);
       }
       if (
+        !schemaUpgradeNeeded &&
         remoteMetadata?.md5Checksum &&
         company.google_drive_md5 &&
         remoteMetadata.md5Checksum === company.google_drive_md5 &&
