@@ -278,14 +278,15 @@ Two independent hashes, never conflated:
 | Field | Computed over | Used by |
 | :--- | :--- | :--- |
 | `google_drive_md5` | Raw `.xlsx` bytes as reported by Drive | Backend change detection |
-| `data_version` | `MD5(item_count + Σ(i_code¦rate¦quantity¦disc_per¦disc_b;)*)` | Device up-to-date check |
+| `data_version` | `MD5(item_count + Σ(i_code¦rate¦quantity¦disc_per¦disc_a¦disc_b¦…¦disc_n¦tax_per;)*)` | Device up-to-date check |
 
-> **Known limitation:** `data_version` does not incorporate `DISC_A`…`DISC_N` or `TAX_PER`.
-> A spreadsheet edit that changes *only* those columns, while leaving `RATE`, `QUANTITY`,
-> `DISC_PER` and `DISC_B` untouched, yields an unchanged `data_version` and can be reported as
-> `unchanged: true` — the device will not re-download. Changing any hashed field, or
-> re-selecting the file in `/admin/drive`, forces republication. Extending the hash input to
-> include the new columns is the recommended follow-up (§18).
+> **Invariant:** every catalog field that can affect a displayed value **must** be an input to
+> `data_version`. When `DISC_A`…`DISC_N` and `TAX_PER` were first added they were omitted from the
+> hash. For a spreadsheet whose `RATE`, `QUANTITY`, `DISC_PER` and `DISC_B` were unchanged, the
+> hash did not change, so devices already holding that `data_version` received
+> `{ up_to_date: true }` and never re-downloaded — their newly added SQLite columns stayed `NULL`.
+> This presented as "only category B is priced correctly". See §16 B5. When adding any new
+> column, extend the hash in the same commit.
 
 ---
 
@@ -647,6 +648,30 @@ Values entered as `ADMIN_USERNAME="admin"` store the quote characters. `normaliz
 strips quotes from hashes but no equivalent normalisation exists for usernames or plain
 passwords. Guidance: never include quotes in Vercel variable values.
 
+### B5 — `data_version` omitted the discount/tax columns ("only category B priced correctly")
+**Symptom:** after deploying the `DISC_A`…`DISC_N` + `TAX_PER` feature and installing the new
+APK, the app displayed a correct price for category **B** only. Categories A, C…N were wrong.
+
+**Diagnosis method:** downloaded the live `.xlsx` via Drive's export endpoint and ran
+`parseExcelBuffer()` against the real bytes. Every parsed field matched the spreadsheet exactly
+(`RATE=2810`, `DISC_A=56`, `DISC_B=56`, `TAX_PER=18`, …). **The parser was correct**, so the fault
+lay downstream.
+
+**Root cause:** `data_version` hashed only `i_code¦rate¦quantity¦disc_per¦disc_b`. Adding the
+new columns did not change the hash, so the published version string was identical to the one
+devices had already stored. On the next sync, `GET /api/sync/data?version=<local>` matched and
+the server returned `{ up_to_date: true, items: [] }`. Devices therefore never re-downloaded.
+Their SQLite `DISC_A`…`DISC_N` and `TAX_PER` columns had been created by the schema migration as
+`NULL`, while `DISC_B` — already present in schema v2 — retained real values. In the app a `NULL`
+discount parses as `0.0`, so every non-B category displayed `RATE` unchanged.
+
+**Fix:** all fifteen discount/tax fields are now inputs to the hash, so any change to them
+produces a new `data_version` and forces a genuine re-download. Verified: re-parsing the live
+file yields `ITEM_COUNT: 5463` with a new hash.
+
+**Operational lesson:** adding a column to the catalog is a *data* change as well as a code
+change. Schema, parser, model, hash and device schema must move together.
+
 ---
 
 ## 17. Testing & Verification
@@ -684,7 +709,6 @@ npm test            # 82+ assertions across 6 scripts
 
 | Item | Status | Impact / recommendation |
 | :--- | :--- | :--- |
-| `data_version` excludes `DISC_A`…`DISC_N`, `TAX_PER` | Open | Edits touching only these columns may be reported `unchanged`. Extend the hash input in `excel-parser.ts` to include them. |
 | 1D barcode decoding | Not implemented | OCR text recognition only |
 | Multi-column full-text search (FTS5) | Not implemented | Exact `I_CODE` lookup only |
 | Background sync when app terminated | Intentional | Sync on launch and every 15 min in foreground |

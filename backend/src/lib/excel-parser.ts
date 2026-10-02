@@ -280,10 +280,38 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
   }
 
   // 6. Generate deterministic MD5 data_version hash
+  // CRITICAL: every catalog field that affects the displayed price MUST be part of
+  // this hash. When DISC_A..DISC_N and TAX_PER were first added, they were omitted,
+  // so the hash did not change for spreadsheets whose RATE/QUANTITY/DISC_PER/DISC_B
+  // were untouched. Devices already holding that data_version then received
+  // { up_to_date: true } and never re-downloaded, leaving the new columns NULL --
+  // which presented as "only category B is priced correctly".
   const hash = crypto.createHash('md5');
   hash.update(String(items.length));
   for (const item of items) {
-    hash.update(`${item.i_code}|${item.rate || ''}|${item.quantity || ''}|${item.disc_per || ''}|${item.disc_b || ''};`);
+    hash.update(
+      [
+        item.i_code,
+        item.rate ?? '',
+        item.quantity ?? '',
+        item.disc_per ?? '',
+        item.disc_a ?? '',
+        item.disc_b ?? '',
+        item.disc_c ?? '',
+        item.disc_d ?? '',
+        item.disc_e ?? '',
+        item.disc_f ?? '',
+        item.disc_g ?? '',
+        item.disc_h ?? '',
+        item.disc_i ?? '',
+        item.disc_j ?? '',
+        item.disc_k ?? '',
+        item.disc_l ?? '',
+        item.disc_m ?? '',
+        item.disc_n ?? '',
+        item.tax_per ?? '',
+      ].join('|') + ';'
+    );
   }
   const data_version = hash.digest('hex');
 
